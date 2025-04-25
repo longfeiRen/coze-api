@@ -2,6 +2,10 @@
 [Coze API 官方文档](https://www.coze.cn/open/docs/developer_guides/coze_api_overview)
 Coze SDK for PHP 是 Coze API 的 PHP 语言 SDK，提供了对 Coze API 的封装，方便开发者在 PHP 中使用 Coze API。
 
+## 安装
+```bash
+composer require coze/api
+```
 ## 准备工作
 1. 创建新应用； 客户端类型 一定选 “服务类应用”、“服务类应用”、“服务类应用”
 2. 获取 公钥、私钥 和应用ID
