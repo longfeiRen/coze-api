@@ -22,6 +22,10 @@ class StreamRun
 
     }
 
+    /**
+     * @return \Psr\Http\Message\StreamInterface
+     * @throws \GuzzleHttp\Exception\GuzzleException
+     */
     public function handle()
     {
         $data = [
@@ -37,17 +41,25 @@ class StreamRun
         if (!empty($this->appId)) {
             $data['app_id'] = $this->appId;
         }
-        $res = $this->client->post($this->url, [
+        
+
+        $res = $this->client->request('POST', $this->url, [
             RequestOptions::HEADERS => [
                 'Authorization' => 'Bearer ' . $this->accessToken,
             ],
-            RequestOptions::JSON => $data
+            RequestOptions::JSON => $data,
+            RequestOptions::STREAM => true,
+            RequestOptions::READ_TIMEOUT => 60,
         ]);
-        // 获取返回的流式数据
+        //echo $this->accessToken,PHP_EOL;
+        //echo json_encode($data, JSON_UNESCAPED_UNICODE),PHP_EOL;
         $body = $res->getBody();
-        $stream = $body->getContents();
-        var_dump($stream);
-        $stream = json_decode($stream, true);
-        var_dump($stream);
+        while (!$body->eof()) {
+            $line = $body->read(1024);
+            echo $line;
+            //fwrite($stream, $line);
+            ob_flush();
+            flush();
+        }
     }
 }

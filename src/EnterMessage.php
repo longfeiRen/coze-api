@@ -75,9 +75,9 @@ class EnterMessage
         $this->content = $content;
     }
 
-    public function asJson(): string
+    public function toArray(): array
     {
-        return json_encode([
+        return array_filter([
             'role' => $this->role,
             'type' => $this->type,
             'content' => $this->content,

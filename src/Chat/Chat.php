@@ -3,10 +3,12 @@
 namespace Coze\Chat;
 
 use Coze\EnterMessage;
+use GuzzleHttp\Client;
+use GuzzleHttp\RequestOptions;
 
 class Chat
 {
-    private string $url = ' https://api.coze.cn/v1/chat';
+    private string $url = 'https://api.coze.cn/v3/chat';
 
     /**
      * @return string
@@ -23,15 +25,15 @@ class Chat
      * bot_id
      * 要进行会话聊天的智能体ID。
      * 进入智能体的 开发页面，开发页面 URL 中 bot 参数后的数字就是智能体ID。
-     * @var string
+     * @var string $botId
      */
-    public string $botId;
+    //public string $botId;
 
     /**
      * user_id
      * 标识当前与智能体的用户，由使用方自行定义、生成与维护。user_id 用于标识对话中的不同用户，不同的 user_id，其对话的上下文消息、数据库等对话记忆数据互相隔离。如果不需要用户数据隔离，可将此参数固定为一个任意字符串，例如 123，abc 等。
      */
-    public string $userId;
+    //public string $userId;
 
     /**
      * additional_messages
@@ -43,6 +45,16 @@ class Chat
     public array $additionalMessages = [];
 
     /**
+     * uuid
+     * 唯一标识一次会话，用于标识一次会话，在一次会话中，uuid 保持不变。
+     * 若未设置 uuid，系统会自动生成一个 uuid。
+     * 若设置了 uuid，系统会根据 uuid 查找历史会话，若找到历史会话，则使用历史会话作为本次对话的上下文。
+     * 若未找到历史会话，则系统会根据 uuid 创建一个新的会话。
+     * @var string
+     */
+    public string $uuid;
+
+    /**
      * stream
      * 是否启用流式返回。
      * @var bool
@@ -50,17 +62,17 @@ class Chat
     public bool $stream = false;
 
     /**
+     * auto_save_history
+     * 是否保存本次对话记录。默认为 true，即保存本次对话记录。
+     */
+    public bool $autoSaveHistory = true;
+
+    /**
      * custom_variables
      * 智能体中定义的变量。在智能体prompt 中设置变量 {{key}} 后，可以通过该参数传入变量值，同时支持 Jinja2 语法。
      * @var array
      */
     public array $customVariables = [];
-
-    /**
-     * auto_save_history
-     * 是否保存本次对话记录。默认为 true，即保存本次对话记录。
-     */
-    public bool $autoSaveHistory = true;
 
     /**
      * meta_data
@@ -90,24 +102,27 @@ class Chat
      */
     public array $messages = [];
 
-    public function __construct(public string $uuid, public string $conversationId,EnterMessage ...$messages)
+    public function __construct(public string $conversationId, public string $botId, public string $userId, public Client $client, public string $token)
     {
-        $this->additionalMessages = $messages;
     }
 
-    public function asJson(): string
+
+    private function toArray(): array
     {
         $result = [
             'bot_id' => $this->botId,
             'user_id' => $this->userId,
             'stream' => $this->stream,
             'additional_messages' => $this->additionalMessages,
-            'custom_variables' => $this->customVariables,
-
+            'auto_save_history' => $this->autoSaveHistory,
         ];
 
+        if ($this->customVariables) {
+            $result['custom_variables'] = $this->customVariables;
+        }
+
         if ($this->additionalMessages) {
-            $result['additional_messages'] = array_map(fn($message) => $message->asArray(), $this->additionalMessages);
+            $result['additional_messages'] = array_map(fn($message) => $message->toArray(), $this->additionalMessages);
         }
 
         if ($this->uuid) {
@@ -115,6 +130,67 @@ class Chat
                 'uuid' => $this->uuid
             ];
         }
-        return json_encode($result);
+        return $result;
+    }
+
+    public function addAdditionalMessage(EnterMessage $message)
+    {
+        $this->additionalMessages[] = $message;
+    }
+    public function setUuid(string $uuid)
+    {
+        $this->uuid = $uuid;
+    }
+    public function setStream(Bool $stream)
+    {
+        $this->stream = $stream;
+    }
+
+    public function send()
+    {
+        $data = $this->toArray();
+        $res = $this->client->post($this->getUrl(), [
+            RequestOptions::HEADERS => [
+                'Authorization' => 'Bearer ' . $this->token,
+            ],
+            RequestOptions::JSON => $data,
+            RequestOptions::STREAM => $this->stream,
+        ]);
+
+        if ($this->stream) {
+            $line = '';
+            $body = $res->getBody();
+            while (!$body->eof()) {
+                $text = $body->read(1024);
+                if (empty($text)) {
+                    break;
+                }
+
+                if (empty($this->conversationId)) {
+                    $line .= $text;
+                    if (str_contains($line, "\n")) {
+                        $line = explode("\n", $line);
+                        foreach ($line as $lineItem) {
+                            if (str_starts_with($lineItem, "data:")) {
+                                // 去掉 data: 前缀
+                                $lineItem = substr($lineItem, 5);
+                                $lineItem = json_decode($lineItem, true);
+                                $this->conversationId = $lineItem['conversation_id'] ?? '';
+                                break;
+                            }
+                        }
+
+                    }
+                }
+
+                echo $text;
+
+                ob_flush();
+                flush();
+            }
+
+        } else {
+            return json_decode($res->getBody()->getContents(), true);
+        }
     }
 }
